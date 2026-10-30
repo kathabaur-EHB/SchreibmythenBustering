@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schreibmythen-Bustering</title>
+<style>
+  :root {
+    --tile: #f5a386;
+    --text: #636051;
+    --bg: #fdf5f0;
+    --green: #2e9e5b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 40px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 48px);
+    margin: 8px 0 24px;
+    letter-spacing: 0.5px;
+    text-align: center;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    width: 100%;
+    max-width: min(760px, calc(100vh - 160px));
+  }
+  .tile {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: var(--tile);
+    color: var(--text);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 4px 10px rgba(99, 96, 81, 0.18);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    padding: 8px;
+    overflow: hidden;
+  }
+  .tile:hover { transform: translateY(-3px); box-shadow: 0 8px 16px rgba(99, 96, 81, 0.25); }
+  .tile .num { font-size: clamp(26px, 5vw, 52px); font-weight: 700; }
+  .tile .txt { display: none; font-size: clamp(9px, 1.3vw, 14px); line-height: 1.25; }
+  .tile.done .num { display: none; }
+  .tile.done .txt { display: block; }
+  .tile.done { opacity: 0.9; }
+  .tile.done::after {
+    content: "✓";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: clamp(22px, 3.2vw, 34px);
+    height: clamp(22px, 3.2vw, 34px);
+    border-radius: 50%;
+    background: var(--green);
+    color: #fff;
+    font-size: clamp(14px, 2vw, 22px);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+  .tile.hidden { visibility: hidden; }
+
+  /* Grosse, fliegende Karte */
+  .backdrop {
+    position: fixed; inset: 0;
+    background: rgba(99, 96, 81, 0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.5s ease;
+    z-index: 10;
+  }
+  .backdrop.show { opacity: 1; pointer-events: auto; }
+  .fly {
+    position: fixed;
+    z-index: 20;
+    perspective: 1400px;
+    display: none;
+    cursor: pointer;
+    transition: left 0.6s ease, top 0.6s ease, width 0.6s ease, height 0.6s ease;
+  }
+  .flip {
+    position: relative; width: 100%; height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.6s ease;
+  }
+  .flip.flipped { transform: rotateY(180deg); }
+  .face {
+    position: absolute; inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    background: var(--tile);
+    color: var(--text);
+    border-radius: 18px;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    padding: 7%;
+  }
+  .face.front { font-size: 52px; font-weight: 700; }
+  .face.back {
+    transform: rotateY(180deg);
+    font-size: clamp(18px, 3vw, 30px);
+    line-height: 1.35;
+    font-weight: 600;
+  }
+  .fly.small .face.back { font-size: clamp(9px, 1.3vw, 14px); font-weight: 400; padding: 8px; }
+
+  .controls { margin-top: 24px; }
+  button.reset {
+    background: transparent;
+    color: var(--text);
+    border: 2px solid var(--text);
+    border-radius: 999px;
+    padding: 8px 20px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button.reset:hover { background: var(--text); color: var(--bg); }
+
+  /* Feuerwerk */
+  canvas#fw { position: fixed; inset: 0; pointer-events: none; z-index: 30; }
+  .bingo {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) scale(0.3);
+    font-size: clamp(60px, 14vw, 160px);
+    font-weight: 900;
+    color: var(--tile);
+    text-shadow: 0 4px 0 var(--text), 0 8px 30px rgba(0,0,0,0.3);
+    opacity: 0; pointer-events: none; z-index: 31;
+    transition: transform 0.5s cubic-bezier(.2,1.6,.4,1), opacity 0.4s ease;
+  }
+  .bingo.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+</style>
+</head>
+<body>
+  <h1>Schreibmythen-Bustering</h1>
+  <div class="grid" id="grid"></div>
+  <div class="controls"><button class="reset" id="reset">Neu starten</button></div>
+
+  <div class="backdrop" id="backdrop"></div>
+  <div class="fly" id="fly">
+    <div class="flip" id="flip">
+      <div class="face front" id="flyFront"></div>
+      <div class="face back" id="flyBack"></div>
+    </div>
+  </div>
+
+  <canvas id="fw"></canvas>
+  <div class="bingo" id="bingo">BINGO!</div>
+
+<script>
+const myths = [
+  "Um in eine gute Schreibstimmung zu kommen, brauche ich viel Zeit am Stück.",
+  "Übers Schreiben spricht man nicht, denn das wirkt unsicher und schwach.",
+  "Bevor ich anfangen kann zu schreiben, muss ich erst einmal alles lesen und wissen.",
+  "Um schreiben zu können, muss ich inspiriert sein.",
+  "Ich kann nicht gut schreiben, weil ich kein Talent dazu habe.",
+  "Mein erster Entwurf sollte möglichst perfekt sein, damit ich später wenig Überarbeitungsaufwand habe.",
+  "Ich sollte so schreiben wie die anderen.",
+  "Damit mein Text wissenschaftlich ist, muss er kompliziert geschrieben sein.",
+  "Ich muss meinen Text von vorne nach hinten in der richtigen Reihenfolge schreiben.",
+  "Alle Daten, die ich erhoben habe, sollten auch in meinem Text vorkommen.",
+  "Erstmal muss ich meinen Schreibtisch und meinen Arbeitsraum gründlich aufräumen, bevor es mit dem Schreiben losgehen kann.",
+  "Meine Arbeit soll brillant und bahnbrechend werden.",
+  "Ich werde nie so gut schreiben können wie mein Professor / meine Professorin.",
+  "Der erste Satz muss sitzen, dann läuft es von selbst weiter.",
+  "Gute Schreibende schreiben schnell und mühelos.",
+  "Feedback hole ich mir erst, wenn mein Text fertig ist."
+];
+
+const grid = document.getElementById("grid");
+const fly = document.getElementById("fly");
+const flip = document.getElementById("flip");
+const flyFront = document.getElementById("flyFront");
+const flyBack = document.getElementById("flyBack");
+const backdrop = document.getElementById("backdrop");
+
+const done = new Array(16).fill(false);
+const celebrated = new Set();
+let openIndex = null;
+let busy = false;
+
+myths.forEach((m, i) => {
+  const t = document.createElement("div");
+  t.className = "tile";
+  t.innerHTML = `<span class="num">${i + 1}</span><span class="txt">${m}</span>`;
+  t.addEventListener("click", () => openTile(i));
+  grid.appendChild(t);
+});
+const tiles = [...grid.children];
+
+function setRect(el, r) {
+  el.style.left = r.left + "px";
+  el.style.top = r.top + "px";
+  el.style.width = r.width + "px";
+  el.style.height = r.height + "px";
+}
+
+function openTile(i) {
+  if (busy || openIndex !== null) return;
+  busy = true;
+  openIndex = i;
+  const tile = tiles[i];
+  const r = tile.getBoundingClientRect();
+
+  flyFront.textContent = i + 1;
+  flyBack.textContent = myths[i];
+  fly.classList.add("small");
+  fly.style.transition = "none";
+  flip.style.transition = "none";
+  flip.classList.toggle("flipped", done[i]);
+  setRect(fly, r);
+  fly.style.display = "block";
+  tile.classList.add("hidden");
+  void fly.offsetWidth;
+
+  fly.style.transition = "";
+  flip.style.transition = "";
+  const w = Math.min(620, window.innerWidth - 40);
+  const h = Math.min(w * 0.68, window.innerHeight - 80);
+  setRect(fly, { left: (window.innerWidth - w) / 2, top: (window.innerHeight - h) / 2, width: w, height: h });
+  fly.classList.remove("small");
+  flip.classList.add("flipped");
+  backdrop.classList.add("show");
+  setTimeout(() => { busy = false; }, 620);
+}
+
+function closeTile() {
+  if (busy || openIndex === null) return;
+  busy = true;
+  const i = openIndex;
+  const r = tiles[i].getBoundingClientRect();
+  setRect(fly, r);
+  fly.classList.add("small");
+  backdrop.classList.remove("show");
+  setTimeout(() => {
+    fly.style.display = "none";
+    tiles[i].classList.remove("hidden");
+    tiles[i].classList.add("done");
+    done[i] = true;
+    openIndex = null;
+    busy = false;
+    checkBingo();
+  }, 620);
+}
+
+fly.addEventListener("click", closeTile);
+backdrop.addEventListener("click", closeTile);
+
+const lines = [];
+for (let r = 0; r < 4; r++) lines.push(["r" + r, [0,1,2,3].map(c => r * 4 + c)]);
+for (let c = 0; c < 4; c++) lines.push(["c" + c, [0,1,2,3].map(r => r * 4 + c)]);
+lines.push(["d1", [0, 5, 10, 15]]);
+lines.push(["d2", [3, 6, 9, 12]]);
+
+function checkBingo() {
+  let newLine = false;
+  lines.forEach(([key, idx]) => {
+    if (!celebrated.has(key) && idx.every(k => done[k])) {
+      celebrated.add(key);
+      newLine = true;
+    }
+  });
+  if (newLine) celebrate();
+}
+
+document.getElementById("reset").addEventListener("click", () => {
+  if (openIndex !== null) return;
+  done.fill(false);
+  celebrated.clear();
+  tiles.forEach(t => t.classList.remove("done"));
+});
+
+/* Feuerwerk */
+const canvas = document.getElementById("fw");
+const ctx = canvas.getContext("2d");
+const bingoEl = document.getElementById("bingo");
+let particles = [];
+let rockets = [];
+let running = false;
+let endTime = 0;
+const colors = ["#f5a386", "#636051", "#ffd166", "#06d6a0", "#ef476f", "#118ab2", "#ffffff"];
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+function launch() {
+  rockets.push({
+    x: canvas.width * (0.15 + Math.random() * 0.7),
+    y: canvas.height,
+    vy: -(canvas.height * 0.012 + Math.random() * 4),
+    targetY: canvas.height * (0.15 + Math.random() * 0.35),
+    color: colors[Math.floor(Math.random() * colors.length)]
+  });
+}
+
+function explode(x, y, color) {
+  const n = 70 + Math.floor(Math.random() * 40);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 1.5 + Math.random() * 5;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 60 + Math.random() * 40,
+      age: 0,
+      color: Math.random() < 0.7 ? color : colors[Math.floor(Math.random() * colors.length)]
+    });
+  }
+}
+
+let lastLaunch = 0;
+function frame(t) {
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "lighter";
+
+  if (t < endTime && t - lastLaunch > 280) { launch(); if (Math.random() < 0.5) launch(); lastLaunch = t; }
+
+  rockets = rockets.filter(r => {
+    r.y += r.vy;
+    ctx.fillStyle = r.color;
+    ctx.beginPath(); ctx.arc(r.x, r.y, 3, 0, Math.PI * 2); ctx.fill();
+    if (r.y <= r.targetY) { explode(r.x, r.y, r.color); return false; }
+    return true;
+  });
+
+  particles = particles.filter(p => {
+    p.age++;
+    p.vx *= 0.98; p.vy = p.vy * 0.98 + 0.06;
+    p.x += p.vx; p.y += p.vy;
+    const alpha = Math.max(0, 1 - p.age / p.life);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    return p.age < p.life;
+  });
+
+  if (t < endTime || rockets.length || particles.length) {
+    requestAnimationFrame(frame);
+  } else {
+    running = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function celebrate() {
+  endTime = performance.now() + 4500;
+  bingoEl.classList.add("show");
+  setTimeout(() => bingoEl.classList.remove("show"), 2800);
+  if (!running) { running = true; requestAnimationFrame(frame); }
+}
+</script>
+</body>
+</html>
